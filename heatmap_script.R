@@ -1,66 +1,44 @@
-#!/usr/bin/env Rscript
-# heatmap_script.R
-# Simple, reusable heatmap script for expression/abundance matrices
-# Usage:
-#   Rscript heatmap_script.R [input.csv] [output.png] [scale]
-#   input.csv: CSV with rownames in first column (genes/features) and samples in columns
-#   output.png: optional (default: heatmap.png)
-#   scale: "row", "column", or "none" (default: row)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
 
-suppressPackageStartupMessages({
-  if (!requireNamespace("pheatmap", quietly=TRUE)) {
-    stop("Please install pheatmap: install.packages('pheatmap')")
-  }
-  if (!requireNamespace("RColorBrewer", quietly=TRUE)) {
-    stop("Please install RColorBrewer: install.packages('RColorBrewer')")
-  }
-})
+# 1️⃣ Set file path
+file_path <- "/home/user/Desktop/Morgans struuff/CosmosID/Results/summary_tables.xlsx"
 
-library(pheatmap)
-library(RColorBrewer)
+# 2️⃣ Define the sample order you want on the x-axis
+sample_order <- c("3MT","2MT1","2MT2","3MM","2MM2","2MM1","1MB","1MNB","2MB1","2MB2","3MB")
 
-args <- commandArgs(trailingOnly = TRUE)
-
-if (length(args) < 1) {
-  message("No input file provided — generating example matrix.")
-  mat <- matrix(rnorm(10*8, mean=0, sd=1), nrow=10)
-  rownames(mat) <- paste0("Feature", seq_len(nrow(mat)))
-  colnames(mat) <- paste0("Sample", seq_len(ncol(mat)))
-  outfile <- "heatmap_example.png"
-  scale.opt <- "row"
-} else {
-  infile <- args[1]
-  outfile <- ifelse(length(args) >= 2, args[2], "heatmap.png")
-  scale.opt <- ifelse(length(args) >= 3, args[3], "row")
-
-  # read CSV: first column contains rownames
-  mat <- as.matrix(read.csv(infile, row.names = 1, check.names = FALSE))
-}
-
-# optional scaling
-if (tolower(scale.opt) %in% c("row", "column")) {
-  if (tolower(scale.opt) == "row") {
-    mat <- t(scale(t(mat)))
-  } else {
-    mat <- scale(mat)
-  }
-}
-
-# color palette (blue-white-red)
-cols <- colorRampPalette(rev(brewer.pal(n = 11, name = "RdBu")))(100)
-
-# draw heatmap and save to file (pheatmap auto-detects PNG/PDF by filename extension)
-pheatmap(
-  mat,
-  color = cols,
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  show_rownames = TRUE,
-  show_colnames = TRUE,
-  fontsize = 10,
-  filename = outfile,
-  width = 8,
-  height = 6
-)
-
-message(sprintf("Wrote heatmap to %s", outfile))
+# 3️⃣ Read sheet 3, calculate relative abundance, and plot heatmap
+read_excel(file_path, sheet = 3) %>%
+  select(Phylum, all_of(sample_order)) %>%
+  pivot_longer(
+    cols = -Phylum,
+    names_to = "Sample",
+    values_to = "Abundance"
+  ) %>%
+  group_by(Sample, Phylum) %>%
+  summarise(Abundance = sum(Abundance), .groups = "drop") %>%
+  group_by(Sample) %>%
+  mutate(RelAbundance = Abundance / sum(Abundance)) %>%
+  ungroup() %>%
+  mutate(Sample = factor(Sample, levels = sample_order)) %>%
+  ggplot(aes(x = Sample, y = Phylum, fill = RelAbundance)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient(
+    low = "white",
+    high = "darkblue",
+    name = "Relative\nAbundance",
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Sample",
+    y = "Phylum",
+    title = "Phylum Relative Abundance Heatmap"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 9),
+    panel.grid = element_blank()
+  )
